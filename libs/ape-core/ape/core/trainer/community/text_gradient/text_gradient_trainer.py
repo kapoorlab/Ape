@@ -129,6 +129,12 @@ class TextGradientTrainer(BaseTrainer):
                     prompt_history=prompt_history_queue,
                 )
 
+                # Skip if applier failed to produce a valid prompt
+                if new_prompt is None:
+                    logger.warning("Text gradient applier returned None, skipping.")
+                    retry_count += 1
+                    continue
+
                 # Evaluate new_prompt on the current batch
                 new_batch_preds, new_batch_eval_results, new_batch_global_result = (
                     await self._evaluate(batch, new_prompt)
@@ -285,7 +291,19 @@ class TextGradientTrainer(BaseTrainer):
                     _retry_count=retry_count
                 )
 
-                new_prompt_message = new_prompt_raw["messages"]
+                # Handle different dict structures from various LLMs
+                if isinstance(new_prompt_raw, dict):
+                    new_prompt_message = (
+                        new_prompt_raw.get("messages")
+                        or new_prompt_raw.get("prompt", {}).get("messages")
+                        or next((v for v in new_prompt_raw.values() if isinstance(v, list)), None)
+                    )
+                    if not new_prompt_message:
+                        raise ValueError(f"No 'messages' found in response keys: {list(new_prompt_raw.keys())}")
+                elif isinstance(new_prompt_raw, str):
+                    new_prompt_message = json.loads(new_prompt_raw)["messages"]
+                else:
+                    raise ValueError(f"Unexpected applier response type: {type(new_prompt_raw)}")
                 new_prompt = prompt.deepcopy()
                 new_prompt.messages = new_prompt_message
 
