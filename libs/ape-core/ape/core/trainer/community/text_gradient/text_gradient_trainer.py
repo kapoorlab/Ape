@@ -238,11 +238,20 @@ class TextGradientTrainer(BaseTrainer):
                     feedback_history=text_gradient_history_str,
                     _retry_count=retry_count
                 )
-                text_gradient = text_gradient.strip()
-                if not text_gradient.startswith("{"):
-                    text_gradient = "{" + text_gradient
-
-                text_gradient = json.loads(text_gradient)["feedback"]
+                # Handle both dict (from json_object response_format) and string
+                if isinstance(text_gradient, dict):
+                    logger.debug(f"Text gradient dict keys: {list(text_gradient.keys())}")
+                    text_gradient = (
+                        text_gradient.get("feedback")
+                        or text_gradient.get("think")
+                        or text_gradient.get("response")
+                        or next(iter(text_gradient.values()), "")
+                    )
+                else:
+                    text_gradient = text_gradient.strip()
+                    if not text_gradient.startswith("{"):
+                        text_gradient = "{" + text_gradient
+                    text_gradient = json.loads(text_gradient)["feedback"]
                 if str(inputs) not in text_gradient_history:
                     text_gradient_history[str(inputs)] = []
                 text_gradient_history[str(inputs)].append(text_gradient)
