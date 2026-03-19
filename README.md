@@ -21,6 +21,11 @@
 
 ## About
 
+
+### For Klab
+pip install -e libs/ape-core -e libs/ape-common
+
+
 **Ape (AI prompt engineer)** is a prompt optimization library with implementations of various state-of-the-art prompt optimization methods.  
 **Ape** focuses on easier benchmarking, experimentation, and collaborative research of various techniques within the community. Ape makes it easy to apply and compare different prompt optimization techniques.
 
