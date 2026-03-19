@@ -291,15 +291,22 @@ class TextGradientTrainer(BaseTrainer):
                     _retry_count=retry_count
                 )
 
-                # Handle different dict structures from various LLMs
-                if isinstance(new_prompt_raw, dict):
-                    new_prompt_message = (
-                        new_prompt_raw.get("messages")
-                        or new_prompt_raw.get("prompt", {}).get("messages")
-                        or next((v for v in new_prompt_raw.values() if isinstance(v, list)), None)
-                    )
-                    if not new_prompt_message:
-                        raise ValueError(f"No 'messages' found in response keys: {list(new_prompt_raw.keys())}")
+                # Handle different response structures from various LLMs
+                if isinstance(new_prompt_raw, list):
+                    # LLM returned a list of messages directly
+                    new_prompt_message = new_prompt_raw
+                elif isinstance(new_prompt_raw, dict):
+                    if "role" in new_prompt_raw and "content" in new_prompt_raw:
+                        # Single message dict — wrap in list
+                        new_prompt_message = [new_prompt_raw]
+                    else:
+                        new_prompt_message = (
+                            new_prompt_raw.get("messages")
+                            or new_prompt_raw.get("prompt", {}).get("messages")
+                            or next((v for v in new_prompt_raw.values() if isinstance(v, list)), None)
+                        )
+                        if not new_prompt_message:
+                            raise ValueError(f"No 'messages' found in response keys: {list(new_prompt_raw.keys())}")
                 elif isinstance(new_prompt_raw, str):
                     new_prompt_message = json.loads(new_prompt_raw)["messages"]
                 else:
