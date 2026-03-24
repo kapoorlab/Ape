@@ -234,6 +234,43 @@ class BaseTrainer(ABC):
 
         return formatted_examples
 
+    def _fallback_fewshot_placeholder(self, prompt: Prompt) -> Prompt:
+        """Manually inject {_FEWSHOT_} placeholder when LLM fails to produce valid JSON."""
+        new_prompt = copy.deepcopy(prompt)
+        placeholder = "\nExample:\n{_FEWSHOT_}"
+        for msg in new_prompt.messages:
+            if msg["role"] == "system":
+                msg["content"] += placeholder
+                return new_prompt
+        # No system message — append to last user message
+        if new_prompt.messages:
+            new_prompt.messages[-1]["content"] += placeholder
+        return new_prompt
+
+    @staticmethod
+    def _extract_json(raw):
+        """Try to extract a JSON object from a raw LLM response (str or dict)."""
+        if isinstance(raw, dict):
+            if "messages" in raw:
+                return raw
+            # Some providers nest under "output" or similar
+            for key in ("output", "result", "response"):
+                if key in raw and isinstance(raw[key], dict) and "messages" in raw[key]:
+                    return raw[key]
+        if isinstance(raw, str):
+            # Strip thinking tags if present
+            text = raw
+            if "<think>" in text:
+                idx = text.rfind("</think>")
+                if idx != -1:
+                    text = text[idx + len("</think>"):]
+            # Find JSON object
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start != -1 and end > start:
+                return json.loads(text[start:end])
+        return None
+
     async def generate_fewshot_placeholder(self, prompt: Prompt) -> Prompt:
         fewshot_placeholder_generator = ApeCorePrompts.get("gen-fewshot-placeholder")
         self._override_prompt_model(fewshot_placeholder_generator)
@@ -242,9 +279,11 @@ class BaseTrainer(ABC):
         while retry_count < 5:
             try:
                 new_prompt_raw = await fewshot_placeholder_generator(prompt=str(prompt.messages), _retry_count=retry_count)
-                new_prompt_messages = new_prompt_raw["messages"]
+                parsed = self._extract_json(new_prompt_raw)
+                if parsed is None or "messages" not in parsed:
+                    raise KeyError("messages")
                 new_prompt = copy.deepcopy(prompt)
-                new_prompt.messages = new_prompt_messages
+                new_prompt.messages = parsed["messages"]
                 return new_prompt
             except Exception as exc:
                 logger.warning(
@@ -252,6 +291,5 @@ class BaseTrainer(ABC):
                 )
                 retry_count += 1
                 if retry_count == 5:
-                    raise ValueError(
-                        f"Failed to generate fewshot placeholder after 5 attempts: {str(exc)}"
-                    ) from exc
+                    logger.warning("All attempts failed. Using fallback fewshot placeholder injection.")
+                    return self._fallback_fewshot_placeholder(prompt)
