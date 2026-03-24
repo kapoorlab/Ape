@@ -26,6 +26,8 @@ class BaseTrainer(ABC):
         task_description: Optional[str] = None,
         metric_description: Optional[str] = None,
         testmode: Optional[bool] = False,
+        optimizer_model: Optional[str] = None,
+        optimizer_response_format: Optional[dict] = None,
         **kwargs,
     ):
         self.generate = generator
@@ -35,6 +37,16 @@ class BaseTrainer(ABC):
         self.metric_description = metric_description
         self.dataset_summary = None
         self.testmode = testmode
+        self.optimizer_model = optimizer_model
+        self.optimizer_response_format = optimizer_response_format
+
+    def _override_prompt_model(self, prompt: "Prompt") -> "Prompt":
+        """Override the model/response_format on an Ape Prompt if optimizer_model is set."""
+        if self.optimizer_model is not None:
+            prompt.model = self.optimizer_model
+        if self.optimizer_response_format is not None:
+            prompt.response_format = self.optimizer_response_format
+        return prompt
 
     @abstractmethod
     async def train(
@@ -107,6 +119,7 @@ class BaseTrainer(ABC):
         trainset: List[DatasetItem],
     ) -> str:
         describe_prompt = ApeCorePrompts.get("describe-prompt")
+        self._override_prompt_model(describe_prompt)
 
         temperature = describe_prompt.temperature
 
@@ -141,9 +154,11 @@ class BaseTrainer(ABC):
     ) -> str:
 
         gen_metric_description: Prompt = ApeCorePrompts.get("gen-metric-description")
+        self._override_prompt_model(gen_metric_description)
         gen_metric_description_with_global_metric: Prompt = ApeCorePrompts.get(
             "gen-metric-description-with-global-metric"
         )
+        self._override_prompt_model(gen_metric_description_with_global_metric)
 
         compute_function = getattr(self.metric, "compute", None)
         compute_function_source_code = inspect.getsource(compute_function)
@@ -178,6 +193,7 @@ class BaseTrainer(ABC):
         upper_lim = min(len(trainset), view_data_batch_size)
 
         descriptor = ApeCorePrompts.get("dataset-descriptor")
+        self._override_prompt_model(descriptor)
         temperature = 0.7
 
         for attempt in range(3):
@@ -220,6 +236,7 @@ class BaseTrainer(ABC):
 
     async def generate_fewshot_placeholder(self, prompt: Prompt) -> Prompt:
         fewshot_placeholder_generator = ApeCorePrompts.get("gen-fewshot-placeholder")
+        self._override_prompt_model(fewshot_placeholder_generator)
 
         retry_count = 0
         while retry_count < 5:
