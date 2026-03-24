@@ -23,7 +23,27 @@
 
 
 ### For Klab
+
+```bash
 pip install -e libs/ape-core -e libs/ape-common
+```
+
+### Klab Fork Changes
+
+Changes made to the upstream Ape codebase for CorText integration (local Ollama, no OpenAI API key):
+
+**`libs/ape-core/ape/core/trainer/base.py`**
+- Added `optimizer_model` and `optimizer_response_format` params to `BaseTrainer.__init__`
+- Added `_override_prompt_model()` helper that applies these to any Ape Prompt
+- Patched `generate_fewshot_placeholder`, `_generate_task_description`, `_generate_metric_description`, `_dataset_summarizer` to call `_override_prompt_model()` on their internally loaded prompts
+- Without this, these methods hardcode `gpt-4o` via the `.prompt` files and fail without an OpenAI API key
+
+**`libs/ape-core/ape/core/trainer/community/text_gradient/text_gradient_trainer.py`**
+- `_text_gradient_generator`: Handle `dict` returns from `json_object` response_format (Ollama qwen3 returns parsed dicts, not strings)
+- `train`: Guard against `None` from failed applier (`if new_prompt is None: continue`)
+- `_text_gradient_applier`: Handle different response structures from Ollama (list, single message dict, nested dict)
+
+**Usage**: Pass `optimizer_model="ollama/qwen3:32b"` and `optimizer_response_format={"type": "json_object"}` to any trainer constructor. Trainer-specific prompts (e.g., `trainer.text_gradient_generator_prompt`) still need manual `.model` override after construction since they're set as instance attributes in each trainer's `__init__`.
 
 
 **Ape (AI prompt engineer)** is a prompt optimization library with implementations of various state-of-the-art prompt optimization methods.  
