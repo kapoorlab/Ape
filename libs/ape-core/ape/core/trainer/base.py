@@ -271,6 +271,59 @@ class BaseTrainer(ABC):
                 return json.loads(text[start:end])
         return None
 
+    @staticmethod
+    def _extract_messages(output):
+        """Extract messages list from a raw LLM output that may not follow the expected schema.
+
+        Handles cases where Ollama returns:
+        - {"messages": [...]}  (expected format)
+        - {"response": '{"system": {...}, "user": {...}}'}  (stringified nested JSON)
+        - {"system": {"content": ..., "role": ...}, "user": {"content": ..., "role": ...}}
+        - Any dict with "role" and "content" values buried somewhere
+        Returns a list of message dicts [{"role": ..., "content": ...}] or None.
+        """
+        if output is None or (isinstance(output, dict) and not output):
+            return None
+
+        # Direct messages key
+        if isinstance(output, dict) and "messages" in output:
+            msgs = output["messages"]
+            if isinstance(msgs, list) and len(msgs) > 0:
+                return msgs
+
+        # Try to find messages in string values (model sometimes stringifies JSON in "response" key)
+        if isinstance(output, dict):
+            for key in ("response", "output", "result", "prompt"):
+                val = output.get(key)
+                if isinstance(val, str):
+                    try:
+                        parsed = json.loads(val.replace("'", '"'))
+                        if isinstance(parsed, dict):
+                            if "messages" in parsed:
+                                return parsed["messages"]
+                            # {"system": {"content":..,"role":..}, "user": {"content":..,"role":..}}
+                            msgs = BaseTrainer._dict_roles_to_messages(parsed)
+                            if msgs:
+                                return msgs
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+
+            # Direct role-keyed dict: {"system": {"content": ..}, "user": {"content": ..}}
+            msgs = BaseTrainer._dict_roles_to_messages(output)
+            if msgs:
+                return msgs
+
+        return None
+
+    @staticmethod
+    def _dict_roles_to_messages(d):
+        """Convert {"system": {"content":..,"role":..}, "user": {"content":..,"role":..}} to messages list."""
+        msgs = []
+        for role in ("system", "user", "assistant"):
+            if role in d and isinstance(d[role], dict) and "content" in d[role]:
+                msgs.append({"role": role, "content": d[role]["content"]})
+        return msgs if len(msgs) >= 1 else None
+
     async def generate_fewshot_placeholder(self, prompt: Prompt) -> Prompt:
         fewshot_placeholder_generator = ApeCorePrompts.get("gen-fewshot-placeholder")
         self._override_prompt_model(fewshot_placeholder_generator)

@@ -136,10 +136,17 @@ class EvoPromptTrainer(BaseTrainer):
                 parallel_task_id=parallel_task_id
             )
             # Ensure the paraphrased prompt starts with the expected format
-            paraphrased_prompt_messages = paraphrased_prompt_raw["messages"]
+            messages = None
+            if isinstance(paraphrased_prompt_raw, dict) and "messages" in paraphrased_prompt_raw:
+                messages = paraphrased_prompt_raw["messages"]
+            else:
+                messages = self._extract_messages(paraphrased_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from paraphrase output: {paraphrased_prompt_raw}")
+                return prompt  # return original on failure
             # Load into Prompt object
             paraphrased_prompt = prompt.deepcopy()
-            paraphrased_prompt.messages = paraphrased_prompt_messages
+            paraphrased_prompt.messages = messages
             return paraphrased_prompt
 
         # Create paraphrased prompts in parallel
@@ -269,10 +276,19 @@ class EvoPromptTrainer(BaseTrainer):
                 prompt1=str(self.indices2prompts[cand_a].messages),
                 prompt2=str(self.indices2prompts[cand_b].messages)
             )
-            child_prompt_messages = child_prompt_raw["mutation_prompt"]["messages"]
-            # Load into Prompt object   
+            messages = None
+            if isinstance(child_prompt_raw, dict) and "mutation_prompt" in child_prompt_raw:
+                mp = child_prompt_raw["mutation_prompt"]
+                if isinstance(mp, dict) and "messages" in mp:
+                    messages = mp["messages"]
+            if messages is None:
+                messages = self._extract_messages(child_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from GA child output: {child_prompt_raw}")
+                messages = self.indices2prompts[cand_a].messages  # fallback to parent
+            # Load into Prompt object
             child_prompt = self.indices2prompts[cand_a].deepcopy()  # Use cand_a as base
-            child_prompt.messages = child_prompt_messages
+            child_prompt.messages = messages
             child_prompt_index = await self._add_prompt(child_prompt)
             self.prompts2mark[child_prompt_index] = "evolved"
             
@@ -308,10 +324,19 @@ class EvoPromptTrainer(BaseTrainer):
                 prompt2=str(self.indices2prompts[b].messages),
                 prompt3=str(self.indices2prompts[c].messages)
             )
-            new_prompt_messages = new_prompt_raw["final_prompt"]["messages"]
-            
+            messages = None
+            if isinstance(new_prompt_raw, dict) and "final_prompt" in new_prompt_raw:
+                fp = new_prompt_raw["final_prompt"]
+                if isinstance(fp, dict) and "messages" in fp:
+                    messages = fp["messages"]
+            if messages is None:
+                messages = self._extract_messages(new_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from DE output: {new_prompt_raw}")
+                messages = self.indices2prompts[old_prompt_index].messages  # fallback
+
             de_prompt = self.indices2prompts[old_prompt_index].deepcopy()
-            de_prompt.messages = new_prompt_messages
+            de_prompt.messages = messages
             de_prompt_index = await self._add_prompt(de_prompt)
             self.prompts2mark[de_prompt_index] = "evolved"
 
@@ -331,9 +356,16 @@ class EvoPromptTrainer(BaseTrainer):
     async def generate_new_prompts_para(self, trainset: List[DatasetItem]):
         async def _paraphrase_prompt(prompt: Prompt) -> Prompt:
             paraphrased_prompt_raw = await self.paraphraser_prompt(base_prompt=str(prompt.messages))
-            paraphrased_prompt_messages = paraphrased_prompt_raw["messages"]
+            messages = None
+            if isinstance(paraphrased_prompt_raw, dict) and "messages" in paraphrased_prompt_raw:
+                messages = paraphrased_prompt_raw["messages"]
+            else:
+                messages = self._extract_messages(paraphrased_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from paraphrase output: {paraphrased_prompt_raw}")
+                return prompt
             paraphrased_prompt = prompt.deepcopy()
-            paraphrased_prompt.messages = paraphrased_prompt_messages
+            paraphrased_prompt.messages = messages
             return paraphrased_prompt
         
         # Paraphrase all prompts in the population

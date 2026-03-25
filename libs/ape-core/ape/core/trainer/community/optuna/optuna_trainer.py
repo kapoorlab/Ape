@@ -157,10 +157,16 @@ class OptunaTrainer(BaseTrainer):
                             _retry_count=retry_count
                         )
                     )
-                    merged_prompt_message = merged_prompt_raw["messages"]   
-                
+                    messages = None
+                    if isinstance(merged_prompt_raw, dict) and "messages" in merged_prompt_raw:
+                        messages = merged_prompt_raw["messages"]
+                    else:
+                        messages = self._extract_messages(merged_prompt_raw)
+                    if messages is None:
+                        raise KeyError("messages")
+
                     merged_prompt = prompt.deepcopy()
-                    merged_prompt.messages = merged_prompt_message
+                    merged_prompt.messages = messages
 
                     break
                 except Exception as e:
@@ -264,9 +270,17 @@ class OptunaTrainer(BaseTrainer):
                 response_format=str(base_prompt.response_format),
                 human_tip="",
             )
-            new_prompt_message = new_prompt_raw["messages"]
+            messages = None
+            if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
+                messages = new_prompt_raw["messages"]
+            else:
+                messages = self._extract_messages(new_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from output: {new_prompt_raw}")
+                return base_prompt
+
             new_prompt = base_prompt.deepcopy()
-            new_prompt.messages = new_prompt_message
+            new_prompt.messages = messages
 
             return new_prompt
 
@@ -318,13 +332,23 @@ class OptunaTrainer(BaseTrainer):
             )
 
             try:
-                new_prompt_message = new_prompt_raw["messages"]
+                messages = None
+                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
+                    messages = new_prompt_raw["messages"]
+                else:
+                    messages = self._extract_messages(new_prompt_raw)
+
+                if messages is None:
+                    raise KeyError("messages")
+
                 new_prompt = base_prompt.deepcopy()
-                new_prompt.messages = new_prompt_message
+                new_prompt.messages = messages
 
                 return new_prompt
 
             except Exception as e:
+                logger.error(f"Error in propose_one for candidate {index+1}: {e}")
+                logger.error(f"Output: {new_prompt_raw}")
                 return base_prompt
 
         tasks = [propose_one(i) for i in range(num_candidates)]

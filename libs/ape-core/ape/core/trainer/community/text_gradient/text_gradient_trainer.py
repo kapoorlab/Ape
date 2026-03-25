@@ -306,9 +306,17 @@ class TextGradientTrainer(BaseTrainer):
                             or next((v for v in new_prompt_raw.values() if isinstance(v, list)), None)
                         )
                         if not new_prompt_message:
+                            new_prompt_message = self._extract_messages(new_prompt_raw)
+                        if not new_prompt_message:
                             raise ValueError(f"No 'messages' found in response keys: {list(new_prompt_raw.keys())}")
                 elif isinstance(new_prompt_raw, str):
-                    new_prompt_message = json.loads(new_prompt_raw)["messages"]
+                    parsed = self._extract_json(new_prompt_raw)
+                    if parsed and "messages" in parsed:
+                        new_prompt_message = parsed["messages"]
+                    else:
+                        new_prompt_message = self._extract_messages(parsed) if parsed else None
+                    if not new_prompt_message:
+                        raise ValueError(f"No 'messages' found in string response")
                 else:
                     raise ValueError(f"Unexpected applier response type: {type(new_prompt_raw)}")
                 new_prompt = prompt.deepcopy()

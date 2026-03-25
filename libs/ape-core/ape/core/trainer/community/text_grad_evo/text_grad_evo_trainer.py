@@ -297,9 +297,16 @@ class TextGradEvoTrainer(BaseTrainer):
                     _retry_count=retry_count
                 )
 
-                new_prompt_message = new_prompt_raw["messages"]
+                messages = None
+                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
+                    messages = new_prompt_raw["messages"]
+                else:
+                    messages = self._extract_messages(new_prompt_raw)
+                if messages is None:
+                    raise KeyError("messages")
+
                 new_prompt = prompt.deepcopy()
-                new_prompt.messages = new_prompt_message
+                new_prompt.messages = messages
 
                 # add "json" if response_format is not None & response_format.type is "json_object" & "json" not in messages
                 messages = [json.dumps(message) for message in new_prompt.messages]
@@ -372,10 +379,19 @@ class TextGradEvoTrainer(BaseTrainer):
                 prompt1=str(cand_a.messages),
                 prompt2=str(cand_b.messages)
             )
-            child_prompt_messages = child_prompt_raw["mutation_prompt"]["messages"]
-            # Load into Prompt object   
+            messages = None
+            if isinstance(child_prompt_raw, dict) and "mutation_prompt" in child_prompt_raw:
+                mp = child_prompt_raw["mutation_prompt"]
+                if isinstance(mp, dict) and "messages" in mp:
+                    messages = mp["messages"]
+            if messages is None:
+                messages = self._extract_messages(child_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from GA child output: {child_prompt_raw}")
+                messages = cand_a.messages  # fallback to parent
+            # Load into Prompt object
             child_prompt = cand_a.deepcopy()  # Use cand_a as base
-            child_prompt.messages = child_prompt_messages
+            child_prompt.messages = messages
             
             return child_prompt
 
@@ -408,10 +424,19 @@ class TextGradEvoTrainer(BaseTrainer):
                 prompt2=str(b.messages),
                 prompt3=str(c.messages)
             )
-            new_prompt_messages = new_prompt_raw["final_prompt"]["messages"]
-            
+            messages = None
+            if isinstance(new_prompt_raw, dict) and "final_prompt" in new_prompt_raw:
+                fp = new_prompt_raw["final_prompt"]
+                if isinstance(fp, dict) and "messages" in fp:
+                    messages = fp["messages"]
+            if messages is None:
+                messages = self._extract_messages(new_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from DE output: {new_prompt_raw}")
+                messages = old_prompt.messages  # fallback
+
             de_prompt = old_prompt.deepcopy()
-            de_prompt.messages = new_prompt_messages
+            de_prompt.messages = messages
 
             return de_prompt
 
@@ -430,10 +455,17 @@ class TextGradEvoTrainer(BaseTrainer):
             # Use the paraphraser prompt to paraphrase the prompt
             paraphrased_prompt_raw = await self.paraphraser_prompt(base_prompt=str(prompt.messages))
             # Extract the prompt
-            paraphrased_prompt_messages = paraphrased_prompt_raw["messages"]
+            messages = None
+            if isinstance(paraphrased_prompt_raw, dict) and "messages" in paraphrased_prompt_raw:
+                messages = paraphrased_prompt_raw["messages"]
+            else:
+                messages = self._extract_messages(paraphrased_prompt_raw)
+            if messages is None:
+                logger.error(f"Failed to extract messages from paraphrase output: {paraphrased_prompt_raw}")
+                return prompt
             # Load into Prompt object
             paraphrased_prompt = prompt.deepcopy()
-            paraphrased_prompt.messages = paraphrased_prompt_messages
+            paraphrased_prompt.messages = messages
             return paraphrased_prompt
         
         # Paraphrase all prompts from the previous generation

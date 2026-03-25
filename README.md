@@ -28,10 +28,9 @@
 pip uninstall ape-common ape-core -y
 pip install -e libs/ape-common -e libs/ape-core --no-build-isolation --force-reinstall --no-deps
 
-Then verify the fix is actually there:
 
-python -c "import ape.core.trainer.base; import inspect; src =
-inspect.getsource(ape.core.trainer.base.BaseTrainer.generate_fewshot_placeholder); print('fallback' in src)"
+
+python -c "import ape.core.trainer.base; import inspect; src = inspect.getsource(ape.core.trainer.base.BaseTrainer.generate_fewshot_placeholder); print('fallback' in src)"
 
 
 ```

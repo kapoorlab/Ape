@@ -367,9 +367,16 @@ class ExpelTrainer(BaseTrainer):
                     _retry_count=retry_count
                 )
 
-                new_prompt_message = new_prompt_raw["messages"]
+                messages = None
+                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
+                    messages = new_prompt_raw["messages"]
+                else:
+                    messages = self._extract_messages(new_prompt_raw)
+                if messages is None:
+                    raise KeyError("messages")
+
                 new_prompt = prompt.deepcopy()
-                new_prompt.messages = new_prompt_message
+                new_prompt.messages = messages
 
                 messages = [json.dumps(message) for message in new_prompt.messages]
                 messages_str = "\n".join(messages)

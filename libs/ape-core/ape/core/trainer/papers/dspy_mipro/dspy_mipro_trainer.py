@@ -370,9 +370,18 @@ class DspyMiproTrainer(BaseTrainer):
 
             try:
                 logger.debug("Attempting to extract and load new prompt")
-                new_prompt_message = output["messages"]
+                # First try direct access, then robust extraction
+                messages = None
+                if isinstance(output, dict) and "messages" in output:
+                    messages = output["messages"]
+                else:
+                    messages = self._extract_messages(output)
+
+                if messages is None:
+                    raise KeyError("messages")
+
                 new_prompt = base_prompt.deepcopy()
-                new_prompt.messages = new_prompt_message
+                new_prompt.messages = messages
                 logger.debug("Successfully created new prompt")
 
                 return new_prompt
