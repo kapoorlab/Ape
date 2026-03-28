@@ -20,7 +20,7 @@
   "dependencies": {
     "autoprefixer": "^10.4.20",
     "lucide-react": "^0.454.0",
-    "next": "^13.5.7",
+    "next": "^15.5.14",
     "nextra": "^3.2.3",
     "nextra-theme-docs": "^3.2.3",
     "react": "^18.2.0",
