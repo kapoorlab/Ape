@@ -264,11 +264,35 @@ class BaseTrainer(ABC):
                 idx = text.rfind("</think>")
                 if idx != -1:
                     text = text[idx + len("</think>"):]
+            text = text.strip()
+            # Try JSON array → wrap as messages
+            if text.startswith("["):
+                end = text.rfind("]") + 1
+                if end > 0:
+                    try:
+                        arr = json.loads(text[:end])
+                        if isinstance(arr, list) and len(arr) > 0 and isinstance(arr[0], dict) and "role" in arr[0]:
+                            return {"messages": arr}
+                    except (json.JSONDecodeError, ValueError):
+                        pass
             # Find JSON object
             start = text.find("{")
             end = text.rfind("}") + 1
             if start != -1 and end > start:
-                return json.loads(text[start:end])
+                try:
+                    obj = json.loads(text[start:end])
+                    if isinstance(obj, dict):
+                        return obj
+                except (json.JSONDecodeError, ValueError):
+                    pass
+                # Try ast.literal_eval for Python dict literals
+                import ast
+                try:
+                    obj = ast.literal_eval(text[start:end])
+                    if isinstance(obj, dict):
+                        return obj
+                except (ValueError, SyntaxError):
+                    pass
         return None
 
     @staticmethod
@@ -374,11 +398,29 @@ class BaseTrainer(ABC):
         while retry_count < 5:
             try:
                 new_prompt_raw = await fewshot_placeholder_generator(prompt=str(prompt.messages), _retry_count=retry_count)
-                parsed = self._extract_json(new_prompt_raw)
-                if parsed is None or "messages" not in parsed:
-                    raise KeyError("messages")
+                logger.warning(f"[fewshot_placeholder] raw type={type(new_prompt_raw).__name__}: {str(new_prompt_raw)[:500]}")
+
+                messages = None
+
+                # Try direct dict access
+                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
+                    messages = new_prompt_raw["messages"]
+
+                # Try JSON extraction
+                if messages is None:
+                    parsed = self._extract_json(new_prompt_raw)
+                    if parsed and "messages" in parsed:
+                        messages = parsed["messages"]
+
+                # Try robust message extraction
+                if messages is None:
+                    messages = self._extract_messages(new_prompt_raw)
+
+                if messages is None:
+                    raise KeyError(f"messages (raw keys={list(new_prompt_raw.keys()) if isinstance(new_prompt_raw, dict) else type(new_prompt_raw).__name__})")
+
                 new_prompt = copy.deepcopy(prompt)
-                new_prompt.messages = parsed["messages"]
+                new_prompt.messages = messages
                 return new_prompt
             except Exception as exc:
                 logger.warning(
