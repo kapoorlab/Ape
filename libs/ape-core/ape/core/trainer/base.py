@@ -277,9 +277,9 @@ class BaseTrainer(ABC):
 
         Handles cases where Ollama returns:
         - {"messages": [...]}  (expected format)
-        - {"response": '{"system": {...}, "user": {...}}'}  (stringified nested JSON)
-        - {"system": {"content": ..., "role": ...}, "user": {"content": ..., "role": ...}}
-        - Any dict with "role" and "content" values buried somewhere
+        - {"response": "{'system': '...', 'user': '...'}"}  (stringified Python dict)
+        - {"system": "content...", "user": "content..."}  (role-keyed with string values)
+        - {"system": {"content": ..., "role": ...}, "user": {...}}  (role-keyed with dict values)
         Returns a list of message dicts [{"role": ..., "content": ...}] or None.
         """
         if output is None or (isinstance(output, dict) and not output):
@@ -291,24 +291,20 @@ class BaseTrainer(ABC):
             if isinstance(msgs, list) and len(msgs) > 0:
                 return msgs
 
-        # Try to find messages in string values (model sometimes stringifies JSON in "response" key)
+        # Try to find messages in string values (model sometimes stringifies dicts in "response" key)
         if isinstance(output, dict):
             for key in ("response", "output", "result", "prompt"):
                 val = output.get(key)
                 if isinstance(val, str):
-                    try:
-                        parsed = json.loads(val.replace("'", '"'))
-                        if isinstance(parsed, dict):
-                            if "messages" in parsed:
-                                return parsed["messages"]
-                            # {"system": {"content":..,"role":..}, "user": {"content":..,"role":..}}
-                            msgs = BaseTrainer._dict_roles_to_messages(parsed)
-                            if msgs:
-                                return msgs
-                    except (json.JSONDecodeError, ValueError):
-                        pass
+                    parsed = BaseTrainer._try_parse_dict(val)
+                    if parsed:
+                        if "messages" in parsed:
+                            return parsed["messages"]
+                        msgs = BaseTrainer._dict_roles_to_messages(parsed)
+                        if msgs:
+                            return msgs
 
-            # Direct role-keyed dict: {"system": {"content": ..}, "user": {"content": ..}}
+            # Direct role-keyed dict
             msgs = BaseTrainer._dict_roles_to_messages(output)
             if msgs:
                 return msgs
@@ -316,12 +312,58 @@ class BaseTrainer(ABC):
         return None
 
     @staticmethod
+    def _try_parse_dict(text):
+        """Try to parse a string as JSON or Python dict literal."""
+        import ast
+        # Try JSON first
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, dict):
+                return obj
+        except (json.JSONDecodeError, ValueError):
+            pass
+        # Try Python literal (handles single quotes, escaped newlines)
+        try:
+            obj = ast.literal_eval(text)
+            if isinstance(obj, dict):
+                return obj
+        except (ValueError, SyntaxError):
+            pass
+        # Try finding a dict inside the string
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start != -1 and end > start:
+            substr = text[start:end]
+            try:
+                obj = json.loads(substr)
+                if isinstance(obj, dict):
+                    return obj
+            except (json.JSONDecodeError, ValueError):
+                pass
+            try:
+                obj = ast.literal_eval(substr)
+                if isinstance(obj, dict):
+                    return obj
+            except (ValueError, SyntaxError):
+                pass
+        return None
+
+    @staticmethod
     def _dict_roles_to_messages(d):
-        """Convert {"system": {"content":..,"role":..}, "user": {"content":..,"role":..}} to messages list."""
+        """Convert role-keyed dicts to messages list.
+
+        Handles both:
+        - {"system": {"content": "...", "role": "system"}, "user": {...}}
+        - {"system": "content string", "user": "content string"}
+        """
         msgs = []
         for role in ("system", "user", "assistant"):
-            if role in d and isinstance(d[role], dict) and "content" in d[role]:
-                msgs.append({"role": role, "content": d[role]["content"]})
+            if role in d:
+                val = d[role]
+                if isinstance(val, dict) and "content" in val:
+                    msgs.append({"role": role, "content": val["content"]})
+                elif isinstance(val, str) and len(val) > 5:
+                    msgs.append({"role": role, "content": val})
         return msgs if len(msgs) >= 1 else None
 
     async def generate_fewshot_placeholder(self, prompt: Prompt) -> Prompt:
