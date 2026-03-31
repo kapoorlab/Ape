@@ -470,39 +470,25 @@ class BaseTrainer(ABC):
         fewshot_placeholder_generator = ApeCorePrompts.get("gen-fewshot-placeholder")
         self._override_prompt_model(fewshot_placeholder_generator)
 
-        retry_count = 0
-        while retry_count < 5:
-            try:
-                new_prompt_raw = await fewshot_placeholder_generator(prompt=str(prompt.messages), _retry_count=retry_count)
-                logger.warning(f"[fewshot_placeholder] raw type={type(new_prompt_raw).__name__}: {str(new_prompt_raw)[:500]}")
+        try:
+            new_prompt_raw = await fewshot_placeholder_generator(prompt=str(prompt.messages), _retry_count=0)
 
-                messages = None
+            messages = None
+            if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
+                messages = new_prompt_raw["messages"]
+            if messages is None:
+                parsed = self._extract_json(new_prompt_raw)
+                if parsed and "messages" in parsed:
+                    messages = parsed["messages"]
+            if messages is None:
+                messages = self._extract_messages(new_prompt_raw)
 
-                # Try direct dict access
-                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
-                    messages = new_prompt_raw["messages"]
-
-                # Try JSON extraction
-                if messages is None:
-                    parsed = self._extract_json(new_prompt_raw)
-                    if parsed and "messages" in parsed:
-                        messages = parsed["messages"]
-
-                # Try robust message extraction
-                if messages is None:
-                    messages = self._extract_messages(new_prompt_raw)
-
-                if messages is None:
-                    raise KeyError(f"messages (raw keys={list(new_prompt_raw.keys()) if isinstance(new_prompt_raw, dict) else type(new_prompt_raw).__name__})")
-
+            if messages is not None:
                 new_prompt = copy.deepcopy(prompt)
                 new_prompt.messages = messages
                 return new_prompt
-            except Exception as exc:
-                logger.warning(
-                    f"Error generating fewshot placeholder: {exc}. Retrying... (Attempt {retry_count + 1}/5)"
-                )
-                retry_count += 1
-                if retry_count == 5:
-                    logger.warning("All attempts failed. Using fallback fewshot placeholder injection.")
-                    return self._fallback_fewshot_placeholder(prompt)
+        except Exception:
+            pass
+
+        logger.warning("Fewshot placeholder LLM failed, using direct injection.")
+        return self._fallback_fewshot_placeholder(prompt)
