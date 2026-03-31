@@ -367,29 +367,36 @@ class DspyMiproTrainer(BaseTrainer):
                 response_format_instructions=response_format_instructions,
             )
             logger.debug("Received output from generate_instructions_by_prompting")
+            logger.warning(f"[propose_one #{index+1}] raw output type={type(output).__name__}: {str(output)[:500]}")
 
             try:
-                logger.debug("Attempting to extract and load new prompt")
-                # First try direct access, then robust extraction
+                # First try direct access
                 messages = None
                 if isinstance(output, dict) and "messages" in output:
                     messages = output["messages"]
-                else:
+
+                # Try robust extraction from various LLM output formats
+                if messages is None:
                     messages = self._extract_messages(output)
 
+                # Try JSON extraction as last resort
                 if messages is None:
-                    raise KeyError("messages")
+                    parsed = self._extract_json(output)
+                    if parsed and "messages" in parsed:
+                        messages = parsed["messages"]
+
+                if messages is None:
+                    raise KeyError(f"Could not extract messages from output keys={list(output.keys()) if isinstance(output, dict) else 'N/A'}")
 
                 new_prompt = base_prompt.deepcopy()
                 new_prompt.messages = messages
-                logger.debug("Successfully created new prompt")
+                logger.warning(f"[propose_one #{index+1}] SUCCESS - extracted {len(messages)} messages")
 
                 return new_prompt
 
             except Exception as e:
-                logger.error(f"Error in propose_one for candidate {index+1}: {e}")
-                logger.error(f"Output: {output}")
-                logger.debug("Returning base prompt due to error")
+                logger.error(f"[propose_one #{index+1}] FAILED: {e}")
+                logger.error(f"[propose_one #{index+1}] Output: {str(output)[:800]}")
                 return base_prompt
 
         logger.debug(f"Creating {num_candidates} tasks for propose_one")
