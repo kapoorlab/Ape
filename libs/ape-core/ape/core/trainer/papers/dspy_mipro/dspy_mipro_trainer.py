@@ -370,23 +370,7 @@ class DspyMiproTrainer(BaseTrainer):
             logger.warning(f"[propose_one #{index+1}] raw output type={type(output).__name__}: {str(output)[:500]}")
 
             try:
-                # First try direct access
-                messages = None
-                if isinstance(output, dict) and "messages" in output:
-                    messages = output["messages"]
-
-                # Try robust extraction from various LLM output formats
-                if messages is None:
-                    messages = self._extract_messages(output)
-
-                # Try JSON extraction as last resort
-                if messages is None:
-                    parsed = self._extract_json(output)
-                    if parsed and "messages" in parsed:
-                        messages = parsed["messages"]
-
-                if messages is None:
-                    raise KeyError(f"Could not extract messages from output keys={list(output.keys()) if isinstance(output, dict) else 'N/A'}")
+                messages = self._extract_prompt_messages(output, base_prompt)
 
                 new_prompt = base_prompt.deepcopy()
                 new_prompt.messages = messages

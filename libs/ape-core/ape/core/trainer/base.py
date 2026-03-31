@@ -390,6 +390,82 @@ class BaseTrainer(ABC):
                     msgs.append({"role": role, "content": val})
         return msgs if len(msgs) >= 1 else None
 
+    def _extract_prompt_messages(self, output, base_prompt: "Prompt"):
+        """Aggressively extract messages from any LLM output format.
+
+        Tries structured extraction first, then falls back to treating
+        any long string value as a new system prompt.
+        Raises KeyError if nothing useful can be extracted.
+        """
+        # 1. Direct messages key
+        if isinstance(output, dict) and "messages" in output:
+            msgs = output["messages"]
+            if isinstance(msgs, list) and len(msgs) > 0:
+                return msgs
+
+        # 2. Robust extraction (handles role-keyed dicts, stringified dicts, etc.)
+        msgs = self._extract_messages(output)
+        if msgs:
+            return msgs
+
+        # 3. JSON/ast extraction
+        parsed = self._extract_json(output)
+        if parsed and "messages" in parsed:
+            return parsed["messages"]
+        if parsed:
+            msgs = self._extract_messages(parsed)
+            if msgs:
+                return msgs
+
+        # 4. Last resort: find the longest string value in the output and use it
+        #    as the system prompt content (qwen3 often returns arbitrary keys with
+        #    the actual prompt text as a value)
+        if isinstance(output, dict):
+            best_text = ""
+            for val in output.values():
+                text = val if isinstance(val, str) else ""
+                # Try to parse stringified dicts/lists inside values
+                if isinstance(val, str) and len(val) > 20:
+                    inner = self._extract_json(val)
+                    if inner:
+                        if "messages" in inner:
+                            return inner["messages"]
+                        inner_msgs = self._extract_messages(inner)
+                        if inner_msgs:
+                            return inner_msgs
+                if len(text) > len(best_text):
+                    best_text = text
+            if len(best_text) > 20:
+                # Build messages mirroring base_prompt structure but with new content
+                new_messages = []
+                for msg in base_prompt.messages:
+                    if msg["role"] == "system":
+                        new_messages.append({"role": "system", "content": best_text})
+                    else:
+                        new_messages.append(dict(msg))
+                if new_messages:
+                    return new_messages
+
+        if isinstance(output, str) and len(output) > 20:
+            # Raw string — use as system prompt
+            text = output
+            if "<think>" in text:
+                idx = text.rfind("</think>")
+                if idx != -1:
+                    text = text[idx + len("</think>"):].strip()
+            if len(text) > 20:
+                new_messages = []
+                for msg in base_prompt.messages:
+                    if msg["role"] == "system":
+                        new_messages.append({"role": "system", "content": text})
+                    else:
+                        new_messages.append(dict(msg))
+                if new_messages:
+                    return new_messages
+
+        keys = list(output.keys()) if isinstance(output, dict) else type(output).__name__
+        raise KeyError(f"Could not extract messages from output ({keys})")
+
     async def generate_fewshot_placeholder(self, prompt: Prompt) -> Prompt:
         fewshot_placeholder_generator = ApeCorePrompts.get("gen-fewshot-placeholder")
         self._override_prompt_model(fewshot_placeholder_generator)
