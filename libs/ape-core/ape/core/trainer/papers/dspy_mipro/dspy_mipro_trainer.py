@@ -126,6 +126,15 @@ class DspyMiproTrainer(BaseTrainer):
         best_score = global_result.score
         best_prompt = prompt.deepcopy()
 
+        # Detect a fixed system prompt prefix that must be preserved across candidates.
+        # If the original system message starts with a known prefix (e.g. "detailed thinking on\n"),
+        # we prepend it to any candidate that doesn't already have it.
+        _sys_prefix = None
+        for msg in prompt.messages:
+            if msg["role"] == "system":
+                _sys_prefix = msg["content"]
+                break
+
         trial_logs: Dict[int, Dict[str, Any]] = {}
 
         def objective(trial: optuna.Trial) -> float:
@@ -153,6 +162,29 @@ class DspyMiproTrainer(BaseTrainer):
             candidate_prompt.messages = selected_instruction_candidate.messages
             candidate_prompt.fewshot = selected_fewshot
 
+            # Preserve fixed system prompt prefix from the original prompt.
+            # The optimizer LLM rewrites the system message from scratch,
+            # so we prepend lines it must not lose (e.g. "detailed thinking on").
+            if _sys_prefix is not None:
+                prefix_lines = []
+                for line in _sys_prefix.split("\n"):
+                    stripped = line.strip().lower()
+                    if stripped.startswith("detailed thinking") or stripped.startswith("detailed_thinking"):
+                        prefix_lines.append(line)
+                    else:
+                        break
+                if prefix_lines:
+                    fixed_prefix = "\n".join(prefix_lines) + "\n"
+                    for msg in candidate_prompt.messages:
+                        if msg["role"] == "system" and not msg["content"].startswith(fixed_prefix):
+                            msg["content"] = fixed_prefix + msg["content"]
+
+            # Log the system prompt for this trial
+            for msg in candidate_prompt.messages:
+                if msg["role"] == "system":
+                    logger.warning(f"Trial {trial.number} system prompt: {msg['content'][:200]}")
+                    break
+
             try:
                 trainset_without_fewshot = [
                     trainset[i] for i in range(len(trainset)) if i not in selected_fewshot_indices
@@ -166,7 +198,8 @@ class DspyMiproTrainer(BaseTrainer):
                 )
                 score = global_result.score
             except Exception as e:
-                logger.error(f"Error in trial {trial.number}: {e}")
+                import traceback
+                logger.error(f"Error in trial {trial.number}: {e}\n{traceback.format_exc()}")
                 trial_logs[trial.number]["evaluation_error"] = str(e)
                 return float("-inf")
 
@@ -196,6 +229,7 @@ class DspyMiproTrainer(BaseTrainer):
                 logger.info(f"Perfect score achieved in trial {trial.number}")
                 trial.study.stop()
 
+            logger.warning(f"Trial {trial.number} finished: score={score:.4f} (best={best_score:.4f})")
             return score
 
         logger.debug("Creating Optuna study")
