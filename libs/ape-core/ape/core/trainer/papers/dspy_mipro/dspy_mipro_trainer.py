@@ -381,13 +381,32 @@ class DspyMiproTrainer(BaseTrainer):
             except Exception as e:
                 logger.error(f"[propose_one #{index+1}] FAILED: {e}")
                 logger.error(f"[propose_one #{index+1}] Output: {str(output)[:800]}")
-                return base_prompt
+                raise RuntimeError(
+                    f"Instruction candidate {index+1} failed to produce valid messages: {e}"
+                ) from e
 
         logger.debug(f"Creating {num_candidates} tasks for propose_one")
         tasks = [propose_one(i) for i in range(num_candidates)]
-        logger.debug("Awaiting completion of all propose_one tasks")
-        proposed_instructions = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        logger.debug(f"Generated {len(proposed_instructions)} instruction candidates")
-        logger.debug("Returning proposed instructions")
+        proposed_instructions = []
+        failed = 0
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"[propose_one #{i+1}] Exception: {result}")
+                failed += 1
+            else:
+                proposed_instructions.append(result)
+
+        if not proposed_instructions:
+            raise RuntimeError(
+                f"All {num_candidates} instruction candidates failed. "
+                "Check optimizer model output format — it must return "
+                '{"messages": [{"role": "system", "content": "..."}, ...]}'
+            )
+
+        logger.warning(
+            f"Generated {len(proposed_instructions)} valid instruction candidates "
+            f"({failed} failed out of {num_candidates})"
+        )
         return proposed_instructions

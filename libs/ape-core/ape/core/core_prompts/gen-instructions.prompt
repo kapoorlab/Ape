@@ -9,42 +9,16 @@ inputs:
     basic_prompt: A basic prompt that we've used before
     tip: A suggestion for how to go with writing the new prompt
 response_format:
-    type: json_schema
-    json_schema:
-        name: prompt
-        description: Creates a prompt consisting of a list of messages.
-        strict: true
-        schema:
-            type: object
-            required:
-                - messages
-            properties:
-                messages:
-                    type: array
-                    description: List of messages in the prompt
-                    items:
-                        type: object
-                        properties:
-                            role:
-                                type: string
-                                description: Role of the message sender
-                                enum:
-                                    - system
-                                    - user
-                            content:
-                                type: string
-                                description: Content of the message
-                        required:
-                            - role
-                            - content
-                        additionalProperties: false
-            additionalProperties: false
+    type: json_object
 ---
 <system>
 You are an expert prompt engineer.
 As an expert prompt engineer, you might include few shot examples, chain of thought, etc. whichever way you like.
 
 A good way to structure the prompt is to add format/persona/instructions to the system prompt, and user inputs to the user prompt.
+
+You MUST respond with a JSON object in this exact format (no text outside the JSON):
+{{"messages": [{{"role": "system", "content": "your system prompt here"}}, {{"role": "user", "content": "your user prompt here"}}]}}
 
 {response_format_instructions}
 </system>

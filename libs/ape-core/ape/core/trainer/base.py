@@ -487,8 +487,8 @@ class BaseTrainer(ABC):
                 new_prompt = copy.deepcopy(prompt)
                 new_prompt.messages = messages
                 return new_prompt
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Fewshot placeholder LLM failed: {e}")
 
-        logger.warning("Fewshot placeholder LLM failed, using direct injection.")
+        logger.warning("Fewshot placeholder LLM failed, using direct injection fallback.")
         return self._fallback_fewshot_placeholder(prompt)

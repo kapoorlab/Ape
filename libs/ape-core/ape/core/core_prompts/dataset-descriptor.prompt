@@ -6,21 +6,7 @@ inputs:
 outputs:
     observations: Something that holds true for most or all of the data you observed
 response_format:
-    type: json_schema
-    json_schema:
-        name: observations
-        description: Observations about the dataset
-        schema:
-            type: object
-            properties:
-                observations:
-                    type: array
-                    items:
-                        type: string
-            required:
-                - observations
-            additionalProperties: false
-        strict: true
+    type: json_object
 ---
 # system prompt (persona)
 <system>

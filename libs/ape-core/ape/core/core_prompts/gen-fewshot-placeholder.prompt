@@ -3,39 +3,13 @@ model: gpt-4o
 inputs: 
     prompt: prompt to fill with fewshot examples placeholder
 response_format:
-    type: json_schema
-    json_schema:
-        name: prompt
-        description: Creates a prompt consisting of a list of messages.
-        strict: true
-        schema:
-            type: object
-            required:
-                - messages
-            properties:
-                messages:
-                    type: array
-                    description: List of messages in the prompt
-                    items:
-                        type: object
-                        properties:
-                            role:
-                                type: string
-                                description: Role of the message sender
-                                enum:
-                                    - system
-                                    - user
-                            content:
-                                type: string
-                                description: Content of the message
-                        required:
-                            - role
-                            - content
-                        additionalProperties: false
-            additionalProperties: false
+    type: json_object
 ---
 <system>
 You are an expert prompt engineer. Your job is to add "Example:\n{_FEWSHOT_}" at the most appropriate location within the prompt. The most suitable locations are typically at the end of the system message or at the end of the user message.
+
+You MUST respond with a JSON object in this exact format (no text outside the JSON):
+{{"messages": [{{"role": "system", "content": "your system prompt here"}}, {{"role": "user", "content": "your user prompt here"}}]}}
 </system>
 <user>
 Prompt:
