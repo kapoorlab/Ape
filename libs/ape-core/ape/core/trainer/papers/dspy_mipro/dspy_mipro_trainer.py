@@ -152,6 +152,7 @@ class DspyMiproTrainer(BaseTrainer):
                 {
                     "instruction": instruction_idx,
                     "fewshot": fewshot_idx,
+                    "system_prompt": None,
                 }
             )
 
@@ -179,9 +180,10 @@ class DspyMiproTrainer(BaseTrainer):
                         if msg["role"] == "system" and not msg["content"].startswith(fixed_prefix):
                             msg["content"] = fixed_prefix + msg["content"]
 
-            # Log the system prompt for this trial
+            # Log and store the system prompt for this trial
             for msg in candidate_prompt.messages:
                 if msg["role"] == "system":
+                    trial_logs[trial.number]["system_prompt"] = msg["content"]
                     logger.warning(f"Trial {trial.number} system prompt: {msg['content'][:200]}")
                     break
 
@@ -242,7 +244,34 @@ class DspyMiproTrainer(BaseTrainer):
         await asyncio.to_thread(study.optimize, objective, n_trials=self.max_steps)
 
         report.best_score = best_score
+        report.trial_logs = trial_logs
         logger.info(f"Optimization completed. Best score: {best_score}")
+
+        # Print summary of all trials with prompts
+        print("\n" + "=" * 80)
+        print("  TRIAL SUMMARY")
+        print("=" * 80)
+        # Initial prompt (before any trial)
+        initial_sys = _sys_prefix or "(none)"
+        print(f"\n  [initial] score={report.scores[0]['score'] if report.scores else 'N/A':.4f}  (baseline)")
+        print(f"    {initial_sys[:300]}")
+        print()
+        for t_num in sorted(trial_logs.keys()):
+            t = trial_logs[t_num]
+            score = t.get("score", float("-inf"))
+            sys_p = t.get("system_prompt", "(unknown)")
+            is_best = (score == best_score and score > 0)
+            marker = " *" if is_best else "  "
+            err = t.get("evaluation_error")
+            if err:
+                print(f"{marker}Trial {t_num}: FAILED — {err[:120]}")
+            else:
+                print(f"{marker}Trial {t_num}: score={score:.4f}  inst={t.get('instruction')}  fewshot={t.get('fewshot')}")
+            if sys_p and sys_p != "(unknown)":
+                print(f"    {sys_p[:300]}")
+            print()
+        print("=" * 80)
+
         return best_prompt, report
 
     async def create_n_fewshot_demo_sets(
