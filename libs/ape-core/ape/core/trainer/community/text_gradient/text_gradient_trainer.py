@@ -135,6 +135,13 @@ class TextGradientTrainer(BaseTrainer):
                     retry_count += 1
                     continue
 
+                # Extract candidate system prompt for reporting
+                candidate_sys = None
+                for _m in new_prompt.messages:
+                    if _m["role"] == "system":
+                        candidate_sys = _m["content"]
+                        break
+
                 # Evaluate new_prompt on the current batch
                 new_batch_preds, new_batch_eval_results, new_batch_global_result = (
                     await self._evaluate(batch, new_prompt)
@@ -157,6 +164,17 @@ class TextGradientTrainer(BaseTrainer):
                     prompt_history_queue.append(
                         {"prompt": new_prompt, "score": new_trainset_score}
                     )
+
+                    # Record candidate with full context
+                    report.candidates.append({
+                        "batch_start": batch_start,
+                        "retry": retry_count,
+                        "batch_score": new_batch_score,
+                        "trainset_score": new_trainset_score,
+                        "system_prompt": candidate_sys,
+                        "text_gradients": text_gradients,
+                        "accepted": new_trainset_score > best_trainset_score,
+                    })
 
                     # Compare new score with the current best score
                     if new_trainset_score > best_trainset_score:
@@ -184,6 +202,16 @@ class TextGradientTrainer(BaseTrainer):
                         else:
                             logger.debug("Retrying with a new proposal...")
                 else:
+                    # Record candidate that didn't beat batch score
+                    report.candidates.append({
+                        "batch_start": batch_start,
+                        "retry": retry_count,
+                        "batch_score": new_batch_score,
+                        "trainset_score": None,
+                        "system_prompt": candidate_sys,
+                        "text_gradients": text_gradients,
+                        "accepted": False,
+                    })
                     logger.debug(
                         f"Trial {retry_count + 1}: Score Not Improved in batch: {best_batch_score} -> {new_batch_score}"
                     )
@@ -196,12 +224,19 @@ class TextGradientTrainer(BaseTrainer):
                     else:
                         logger.debug("Retrying with a new proposal...")
 
+            # Extract current best system prompt for reporting
+            best_sys = None
+            for _m in best_prompt.messages:
+                if _m["role"] == "system":
+                    best_sys = _m["content"]
+                    break
+
             # Update report with new score
             if self.testmode:
                 _, _, val_global_result  = await self._evaluate(valset, best_prompt)
-                report.scores.append({"step": len(report.scores), "score": best_trainset_score, "val_score": val_global_result.score})
+                report.scores.append({"step": len(report.scores), "score": best_trainset_score, "val_score": val_global_result.score, "system_prompt": best_sys})
             else:
-                report.scores.append({"step": len(report.scores), "score": best_trainset_score})
+                report.scores.append({"step": len(report.scores), "score": best_trainset_score, "system_prompt": best_sys})
                 
             if best_trainset_score == 1.0:
                 logger.debug("Score reached 1.0")

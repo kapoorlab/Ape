@@ -224,13 +224,22 @@ class Prompt(pf.Prompt):
             logger.error("Error: No messages in prompt.")
             return None
         model = self.model
+
+        # Disable thinking for ollama reasoning models (e.g. qwen3) —
+        # thinking inflates token usage and breaks JSON response parsing
+        call_kwargs = dict(lm_config)
+        if model and "ollama" in str(model):
+            call_kwargs.setdefault("extra_body", {})
+            call_kwargs["extra_body"].setdefault("options", {})
+            call_kwargs["extra_body"]["options"]["think"] = False
+
         try:
             res = await acompletion(
                 model=model,
                 messages=messages,
                 response_format=self.response_format,
                 num_retries=num_retries,
-                **lm_config,
+                **call_kwargs,
             )
         except Exception as e:
             logger.error(f"Failed to complete after 3 attempts: {e}")
@@ -241,6 +250,10 @@ class Prompt(pf.Prompt):
             await CostTracker.add_cost(cost=cost, label=self.name)
 
         res_text = res.choices[0].message.content
+        # Strip <think>...</think> blocks if model still emits them
+        if res_text:
+            import re as _re
+            res_text = _re.sub(r'<think>.*?</think>', '', res_text, flags=_re.DOTALL).strip()
         if not res_text:
             logger.error(res)
 

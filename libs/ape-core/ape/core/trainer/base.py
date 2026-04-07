@@ -422,7 +422,8 @@ class BaseTrainer(ABC):
         #    the actual prompt text as a value)
         if isinstance(output, dict):
             best_text = ""
-            for val in output.values():
+            best_key = ""
+            for key, val in output.items():
                 text = val if isinstance(val, str) else ""
                 # Try to parse stringified dicts/lists inside values
                 if isinstance(val, str) and len(val) > 20:
@@ -435,7 +436,13 @@ class BaseTrainer(ABC):
                             return inner_msgs
                 if len(text) > len(best_text):
                     best_text = text
+                    best_key = key
             if len(best_text) > 20:
+                logger.warning(
+                    f"_extract_prompt_messages fallback: using value of key '{best_key}' "
+                    f"({len(best_text)} chars) as system prompt. "
+                    f"Output keys: {list(output.keys())}"
+                )
                 # Build messages mirroring base_prompt structure but with new content
                 new_messages = []
                 for msg in base_prompt.messages:
@@ -454,6 +461,9 @@ class BaseTrainer(ABC):
                 if idx != -1:
                     text = text[idx + len("</think>"):].strip()
             if len(text) > 20:
+                logger.warning(
+                    f"_extract_prompt_messages fallback: using raw string ({len(text)} chars) as system prompt: {text[:100]}"
+                )
                 new_messages = []
                 for msg in base_prompt.messages:
                     if msg["role"] == "system":

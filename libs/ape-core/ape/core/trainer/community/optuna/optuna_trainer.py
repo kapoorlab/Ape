@@ -99,7 +99,7 @@ class OptunaTrainer(BaseTrainer):
         # Initialize evaluation on train set
         preds, eval_results, global_result = await self._evaluate(trainset, prompt)
         report.best_score = global_result
-        report.trial_logs = []
+        report.trial_logs = {}
 
         # Generate candidate prompts
         eval_based_candidates = await self.generate_prompt_candidates_by_eval_result(
@@ -117,6 +117,15 @@ class OptunaTrainer(BaseTrainer):
 
         best_score = global_result.score
         best_prompt = prompt.deepcopy()
+
+        # Log generated candidates for diagnostics
+        logger.info(f"Initial score: {best_score:.4f}")
+        for ci, cand in enumerate(eval_based_candidates):
+            cand_sys = next((m["content"] for m in cand.messages if m["role"] == "system"), "")
+            logger.info(f"Eval candidate {ci}: {cand_sys[:100]}")
+        for ci, cand in enumerate(prompt_engineering_based_candidates):
+            cand_sys = next((m["content"] for m in cand.messages if m["role"] == "system"), "")
+            logger.info(f"PromptEng candidate {ci}: {cand_sys[:100]}")
 
         # Initialize trial_logs and total_eval_calls
         trial_logs: Dict[int, Dict[str, Any]] = {}
@@ -160,13 +169,7 @@ class OptunaTrainer(BaseTrainer):
                             _retry_count=retry_count
                         )
                     )
-                    messages = None
-                    if isinstance(merged_prompt_raw, dict) and "messages" in merged_prompt_raw:
-                        messages = merged_prompt_raw["messages"]
-                    else:
-                        messages = self._extract_messages(merged_prompt_raw)
-                    if messages is None:
-                        raise KeyError("messages")
+                    messages = self._extract_prompt_messages(merged_prompt_raw, prompt)
 
                     merged_prompt = prompt.deepcopy()
                     merged_prompt.messages = messages
@@ -195,11 +198,20 @@ class OptunaTrainer(BaseTrainer):
                 trial_logs[trial.number]["evaluation_error"] = str(e)
                 return float("-inf")
 
+            # Extract system prompt text for reporting
+            candidate_sys = None
+            for _m in candidate_prompt.messages:
+                if _m["role"] == "system":
+                    candidate_sys = _m["content"]
+                    break
+
             # Update trial logs
             trial_logs[trial.number].update(
                 {
                     "score": score,
                     "num_eval_calls": len(trainset),
+                    "system_prompt": candidate_sys,
+                    "messages": [dict(m) for m in candidate_prompt.messages],
                 }
             )
 
@@ -273,12 +285,9 @@ class OptunaTrainer(BaseTrainer):
                 response_format=str(base_prompt.response_format),
                 human_tip="",
             )
-            messages = None
-            if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
-                messages = new_prompt_raw["messages"]
-            else:
-                messages = self._extract_messages(new_prompt_raw)
-            if messages is None:
+            try:
+                messages = self._extract_prompt_messages(new_prompt_raw, base_prompt)
+            except KeyError:
                 logger.error(f"Failed to extract messages from output: {new_prompt_raw}")
                 return base_prompt
 
@@ -335,14 +344,7 @@ class OptunaTrainer(BaseTrainer):
             )
 
             try:
-                messages = None
-                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
-                    messages = new_prompt_raw["messages"]
-                else:
-                    messages = self._extract_messages(new_prompt_raw)
-
-                if messages is None:
-                    raise KeyError("messages")
+                messages = self._extract_prompt_messages(new_prompt_raw, base_prompt)
 
                 new_prompt = base_prompt.deepcopy()
                 new_prompt.messages = messages

@@ -89,6 +89,21 @@ class EvoPromptTrainer(BaseTrainer):
             # Optionally write step results
             logger.info(f"Step {step}: Best Score = {best_score}, Avg Score = {avg_score}")
             
+            # Collect per-individual prompts and scores for this epoch
+            population_details = []
+            for p_idx in self.population:
+                p_sys = None
+                for _m in self.indices2prompts[p_idx].messages:
+                    if _m["role"] == "system":
+                        p_sys = _m["content"]
+                        break
+                population_details.append({
+                    "index": p_idx,
+                    "score": self.evaluated_prompts.get(p_idx, 0.0),
+                    "system_prompt": p_sys,
+                    "mark": self.prompts2mark.get(p_idx, ""),
+                })
+
             if self.testmode:
                 semaphore = asyncio.Semaphore(5)
                 async def eval_with_semaphore(p):
@@ -98,24 +113,30 @@ class EvoPromptTrainer(BaseTrainer):
                 val_results = await asyncio.gather(*val_eval_tasks)
                 val_scores = [global_score.score for _, _, global_score in val_results]
                 best_val_score = max(val_scores)
-                
+
                 best_score_prompt_index = max(self.evaluated_prompts.items(), key=lambda x: x[1])[0]
                 best_score_prompt_population_index = self.population.index(best_score_prompt_index)
                 best_score_prompt_val_score = val_scores[best_score_prompt_population_index]
-                
+
+                # Add val scores to population details
+                for pd, vs in zip(population_details, val_scores):
+                    pd["val_score"] = vs
+
                 report.scores.append({
                     "step": step,
                     "best_score": best_score,
                     "avg_score": avg_score,
                     "val_best_score": best_val_score,
                     "val_score": best_score_prompt_val_score,
-                    "val_avg_score": sum(val_scores) / len(val_scores)
+                    "val_avg_score": sum(val_scores) / len(val_scores),
+                    "population": population_details,
                 })
             else:
                 report.scores.append({
                     "step": step,
                     "best_score": best_score,
-                    "avg_score": avg_score
+                    "avg_score": avg_score,
+                    "population": population_details,
                 })
             
             if best_score >= 1.0:

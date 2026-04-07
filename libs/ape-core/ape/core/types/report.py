@@ -9,6 +9,7 @@ class BaseReport(BaseModel):
 
 class TextGradientTrainerReport(BaseReport):
     text_gradients: List[Dict[str, Any]]
+    candidates: List[Dict[str, Any]] = []
 
 class ExpelTrainerReport(BaseReport):
     feedbacks: List[Dict[str, Any]]
