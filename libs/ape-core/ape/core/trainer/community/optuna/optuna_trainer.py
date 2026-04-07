@@ -1,8 +1,11 @@
 import asyncio
 import json
+import logging
 import random
 import numpy as np
 from typing import Any, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 import optuna
 
