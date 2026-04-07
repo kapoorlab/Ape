@@ -333,10 +333,12 @@ class ExpelTrainer(BaseTrainer):
                     _retry_count=retry_count
                 )
 
-                if not response.strip().startswith("{"):
-                    response = "{" + response
-
-                response_json = json.loads(response)
+                if isinstance(response, dict):
+                    response_json = response
+                else:
+                    if not response.strip().startswith("{"):
+                        response = "{" + response
+                    response_json = json.loads(response)
                 if response_json.get("feedback", None) is not None:
                     return response_json["feedback"]
                 else:
@@ -367,13 +369,7 @@ class ExpelTrainer(BaseTrainer):
                     _retry_count=retry_count
                 )
 
-                messages = None
-                if isinstance(new_prompt_raw, dict) and "messages" in new_prompt_raw:
-                    messages = new_prompt_raw["messages"]
-                else:
-                    messages = self._extract_messages(new_prompt_raw)
-                if messages is None:
-                    raise KeyError("messages")
+                messages = self._extract_prompt_messages(new_prompt_raw, prompt)
 
                 new_prompt = prompt.deepcopy()
                 new_prompt.messages = messages

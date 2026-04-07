@@ -109,7 +109,7 @@ class DspyMiproTrainer(BaseTrainer):
         logger.debug("Evaluating initial prompt")
         preds, eval_results, global_result = await self._evaluate(trainset, prompt)
         report.best_score = global_result.score
-        report.trial_logs = []
+        report.trial_logs = {}
 
         logger.debug("Creating fewshot demo sets")
         fewshot_candidates, fewshot_candidate_indices = await self.create_n_fewshot_demo_sets(
