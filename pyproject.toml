@@ -22,7 +22,7 @@ nest_asyncio = "^1.6.0"
 ape-common = {path = "libs/ape-common", develop = true}
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.3"
+pytest = "^9.0.3"
 black = "^24.8.0"
 isort = "^5.13.2"
 mypy = "^1.11.2"
